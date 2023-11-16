@@ -12,6 +12,7 @@ from langchain.schema import AgentFinish, AgentAction
 from langchain.schema.runnable import RunnableConfig
 from langchain.tools.render import render_text_description
 from langchain.agents.format_scratchpad.log import format_log_to_str
+from callbacks import AgentCallbackHandler
 import os
 
 load_dotenv()
@@ -71,7 +72,7 @@ Thought: {agent_scratchpad}"""
         tools=render_text_description(tools),
         tool_names="".join([tool.name for tool in tools]),
     )
-    llm = GPT4All(temp=0, model=llm_path, verbose=True, streaming=True, max_tokens=1000)
+    llm = GPT4All(temp=0, model=llm_path, verbose=True, streaming=True, max_tokens=1000,callbacks=[AgentCallbackHandler()])
     intermediate_steps = []
     agent = (
         {
