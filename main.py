@@ -11,6 +11,7 @@ from langchain.prompts import PromptTemplate
 from langchain.schema import AgentFinish, AgentAction
 from langchain.schema.runnable import RunnableConfig
 from langchain.tools.render import render_text_description
+from langchain.agents.format_scratchpad.log import format_log_to_str
 import os
 
 load_dotenv()
@@ -25,7 +26,7 @@ def get_text_length(text: str) -> int:
     :param text: a string of text
     :return: an integer that represents the number of characters in the string text
     """
-    text_cleaned = text.replace('"', '').replace('\n', '')
+    text_cleaned = text.replace('"', "").replace("\n", "")
     return len(text_cleaned)
 
 
@@ -64,32 +65,41 @@ Final Answer: the final answer to the original input question
 Begin!
 
 Question: {input}
-Thought:"""
+Thought: {agent_scratchpad}"""
 
     prompt = PromptTemplate.from_template(template).partial(
         tools=render_text_description(tools),
         tool_names="".join([tool.name for tool in tools]),
     )
     llm = GPT4All(temp=0, model=llm_path, verbose=True, streaming=True, max_tokens=1000)
-
+    intermediate_steps = []
     agent = (
-        {"input": lambda x: x["input"]}
+        {
+            "input": lambda x: x["input"],
+            "agent_scratchpad": lambda x: format_log_to_str(x["agent_scratchpad"]),
+        }
         | prompt
         | llm.bind(stop=["Observation"])
         | ReActSingleInputOutputParser()
     )
 
-    ##we defined agent_step to be one of two types
-    agent_step: Union[AgentAction, AgentFinish] = agent.invoke(
-        {"input": "what is the length in character of the text: Dog ? "}
-    )
-    print(agent_step)
-    if isinstance(agent_step, AgentAction):
-        tool_name = agent_step.tool
-        tool = get_tool_from_name(tools, tool_name)
-        tool_input = agent_step.tool_input
+    agent_step = ""
+    while not isinstance(agent_step, AgentFinish):
+        ##we defined agent_step to be one of two types
+        agent_step: Union[AgentAction, AgentFinish] = agent.invoke(
+            {
+                "input": "what is the length in character of the text: Dog? ",
+                "agent_scratchpad": intermediate_steps,
+            }
+        )
 
+        if isinstance(agent_step, AgentAction):
+            tool_name = agent_step.tool
+            tool = get_tool_from_name(tools, tool_name)
+            tool_input = agent_step.tool_input
 
-        ### typecasting just in case
-        observation = tool.func(tool_input)
-        print(f"Observation is {observation}")
+            observation = tool.func(tool_input)
+            intermediate_steps.append((agent_step, str(observation)))
+
+    if isinstance(agent_step, AgentFinish):
+        print(agent_step.return_values)
